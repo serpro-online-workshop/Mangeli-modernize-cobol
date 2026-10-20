@@ -1,0 +1,13 @@
+flowchart LR
+    user([Console user<br/>stdin/stdout])
+    subgraph legacy["src/cobol — single executable (cobc -x)"]
+        main["MainProgram<br/>main.cob<br/>menu loop, USER-CHOICE PIC 9"]
+        ops["Operations<br/>operations.cob<br/>TOTAL / CREDIT / DEBIT<br/>AMOUNT PIC 9(6)V99"]
+        data["DataProgram<br/>data.cob<br/>STORAGE-BALANCE PIC 9(6)V99 = 1000.00"]
+    end
+    user -- "ACCEPT choice" --> main
+    main -- "CALL 'Operations' USING 'TOTAL '/'CREDIT'/'DEBIT '" --> ops
+    user -- "ACCEPT amount" --> ops
+    ops -- "CALL 'DataProgram' USING 'READ'/'WRITE', FINAL-BALANCE" --> data
+    data -. "in-memory only, no files/DB" .- data
+    ops -- "DISPLAY balance / messages" --> user
