@@ -1,0 +1,31 @@
+flowchart LR
+    io([stdin / stdout<br/>strangler boundary])
+
+    subgraph legacy["src/cobol (retained as oracle, D1)"]
+        main["MainProgram<br/>main.cob"]
+        ops["Operations<br/>operations.cob"]
+        data["DataProgram<br/>data.cob"]
+        main --> ops --> data
+    end
+
+    subgraph target["modernized/account_system.py (D6)"]
+        run["run() menu loop<br/>RULE-003..007, 018"]
+        opsp["view_balance / credit / debit<br/>RULE-008..013, 015"]
+        num["parse_choice / parse_amount<br/>format_amount / overflow fit<br/>RULE-005, 010, 014, 017"]
+        store[("BalanceStore<br/>in-memory 1000.00<br/>RULE-001, 002, 016")]
+        run --> opsp --> store
+        run --> num
+        opsp --> num
+    end
+
+    subgraph tests["modernized/tests"]
+        unit["unit tests"]
+        diff["differential golden master<br/>(skip if no cobc)"]
+    end
+
+    io --> main
+    io --> run
+    diff -. "compare transcripts<br/>(amounts normalized, D2)" .-> legacy
+    diff -.-> target
+    unit -.-> num
+    unit -.-> opsp

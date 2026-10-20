@@ -45,6 +45,12 @@ accountsystem
 node_modules/
 src/accounting/node_modules
 
+# Python #
+##########
+.venv/
+__pycache__/
+.ruff_cache/
+
 # Test coverage files #
 #######################
 coverage/

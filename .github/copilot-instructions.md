@@ -23,7 +23,7 @@ Modernization of the COBOL account management system (`src/cobol/`) to Python.
 - Menu options 1-4 and messages from `src/cobol/main.cob`.
 - Input handling and credit overflow truncation mimic GnuCOBOL; no persistence.
 
-Approved intentional change: amounts display as `1000.00` (not `001000.00`). See decisions in `analysis/account-system/BRIEF.md`.
+Approved intentional changes: amounts display as `1000.00` (not `001000.00`); end of input at the menu prints the goodbye line and exits 0. See decisions in `analysis/account-system/BRIEF.md`.
 
 Any deviation (input validation, overflow handling, persistence) is an intentional change and must be recorded in `analysis/account-system/` before implementation.
 

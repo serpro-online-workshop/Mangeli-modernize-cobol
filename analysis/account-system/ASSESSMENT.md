@@ -54,7 +54,7 @@ Inputs piped to `/tmp/accountsystem`; output filtered to result lines. These are
 | --- | --- | --- | --- | --- | --- |
 | R1 | GnuCOBOL `ACCEPT` numeric parsing (sign drop, decimal truncation, non-numeric → 0, digit truncation) | Behavior fidelity | High | Runtime table above; `AMOUNT PIC 9(6)V99` (`operations.cob` L7) | Extract as explicit rules; implement a dedicated parser; golden-master tests per case |
 | R2 | Overflow truncation on `ADD` without `ON SIZE ERROR` | Behavior fidelity | Medium | `operations.cob` L24; `999000` → `000000.00` | Implement modulo 1,000,000 on integer part (D4); boundary tests |
-| R3 | `999999.99` ACCEPT anomaly (→ `999999.90`) | Behavior fidelity | Medium | Runtime table | Characterize inputs of length ≥ 9 in extract-rules; decide preserve vs. document as known quirk |
+| R3 | `999999.99` ACCEPT anomaly (→ `999999.90`) | Behavior fidelity | Medium | Runtime table | Explained in RULES.md RULE-014: ACCEPT keeps only the first 8 input characters |
 | R4 | Menu `PIC 9` takes first character only | Behavior fidelity | Medium | `main.cob` L6, `12` → option 1 | Rule card + tests (D3 preserve) |
 | R5 | Infinite loop on EOF | Reliability / DoS | Medium | `printf '1\n' \| timeout 3 ./accountsystem` → 6,588,721 lines, rc 124 | Decide in reimagine: preserve (not useful) or exit on EOF as intentional change |
 | R6 | Literal `'READ'`/`'WRITE'` (4/5 bytes) passed to `PIC X(6)` linkage | Latent defect | Low | `operations.cob` L17, L23, L25; `data.cob` L10 | Works in GnuCOBOL; irrelevant in Python (use enum/methods) |

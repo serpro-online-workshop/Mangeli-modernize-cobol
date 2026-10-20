@@ -83,6 +83,7 @@ Approved by the initiative owner on 2026-10-20.
 | D5 | No persistence; balance resets to 1000.00 each run. | Preserve | In-memory storage only |
 | D6 | Packaging: plain module (no `pyproject.toml` package). | Technical | Layout under `modernized/` |
 | D7 | No timeline or approval gate beyond the workshop. | Process | Owner self-approves stages |
+| D8 | On end of input at the menu, print `Exiting the program. Goodbye!` and exit with code 0 instead of looping forever (RULE-018, DESIGN C2). | **Intentional change** | Menu loop EOF handling; session test |
 
 ## Open Questions
 
