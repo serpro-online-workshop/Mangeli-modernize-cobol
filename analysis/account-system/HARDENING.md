@@ -1,6 +1,97 @@
 # Hardening Review — account-system
 
+Review 2 (2026-10-20) covers the complete application after DESIGN phases 2–3. Review 1 (phases 0–1) is kept below for traceability.
+
 ## Scope
+
+- Target: `modernized/` — `account_system.py` (numeric semantics, `BalanceStore`, operations, `run`, `main`), `tests/` (7 files), `pytest.ini`, `ruff.toml`, `requirements-dev.txt`.
+- Reviewed artifacts: [BRIEF.md](BRIEF.md) (D1–D8), [RULES.md](RULES.md) (RULE-001…018), [DESIGN.md](DESIGN.md), [MAP.md](MAP.md), Review 1 findings F1–F9; legacy `src/cobol/*.cob` compiled with GnuCOBOL 3.1.2 as oracle.
+
+## Validation Commands
+
+Run from `modernized/` with `.venv` (Python 3.10.12).
+
+| Command | Result | Notes |
+| --- | --- | --- |
+| `../.venv/bin/pytest -q --cov=account_system --cov-branch --cov-report=term-missing` | 538 passed; 100% lines (118/118), 100% branches (40/40) | Includes 72 whole-session and 338 numeric differential cases against the legacy binary |
+| `../.venv/bin/pytest -q -m "not differential"` | 128 passed, 410 deselected | Suite that runs without `cobc` |
+| `../.venv/bin/ruff check .` / `ruff format --check .` | All checks passed / 7 files formatted | Project rule set |
+| `../.venv/bin/ruff check --select ALL --ignore D,ANN,COM812,ISC001,T201,S101,S603,PLR2004,FBT,INP001,ERA001,PTH,EM,TRY003,N802 account_system.py` | All checks passed | Stricter one-off pass on production code |
+| `python3 /tmp/fuzz_amount.py 5` / `13` | 0 / 3,000 mismatches each | Adds to 12,000 from transform (alphabet incl. tab, CR, VT, `é`) |
+| `printf '2\n\xe91234567\n4\n' \| python account_system.py` (default UTF-8 locale, and `LC_ALL=C`) | `235567.00` = legacy | Raw byte preserved by `surrogateescape` |
+| Same input with `PYTHONIOENCODING=latin-1` | `1000.00` ≠ legacy `235567.00` | **H1** |
+| `yes 1 \| head -2000 \| python account_system.py \| head -1` | `BrokenPipeError` traceback, rc 1 | **H2** |
+| `python account_system.py <&-` | `AttributeError: 'NoneType' object has no attribute 'reconfigure'` | **H2** |
+| Ctrl+C (SIGINT) during input | `KeyboardInterrupt` traceback | **H2**; legacy prints `signal SIGINT` diagnostics |
+| `pip-audit --version` | Not installed | F6 still open |
+| `git diff --stat -- src/cobol` | Empty | Legacy untouched |
+
+## Ranked Findings
+
+| Rank | Severity | Area | Finding | Evidence | Recommendation | Owner |
+| --- | --- | --- | --- | --- | --- | --- |
+| H1 | Medium | Behavior drift (RULE-014) | `main()` keeps the locale's stdin encoding. With a non-UTF-8 encoding (e.g. `PYTHONIOENCODING=latin-1` or an ISO-8859 locale), bytes are re-encoded differently and the 8-byte window diverges from legacy. | `\xe91234567`: legacy 235567.00, Python 1000.00 under latin-1; equal under UTF-8 and `LC_ALL=C` | Reconfigure stdin with `encoding="utf-8", errors="surrogateescape"`: this round-trips every byte regardless of locale; add a `main()` test with a latin-1 wrapper | Developer |
+| H2 | Low | Error handling | Abnormal terminations show Python tracebacks: broken stdout pipe, closed stdin, Ctrl+C. Legacy also ends abnormally on SIGINT, so no rule is violated, but tracebacks leak internals and look like crashes. | Commands above | In `main()`, handle `KeyboardInterrupt` (exit 130) and `BrokenPipeError` (exit 141 / quiet), and fail with a one-line message when `sys.stdin` is `None`; add tests | Developer |
+| H3 | Medium | Operational readiness | No run instructions or runbook for the Python app; README still describes the workshop and the workflow targeted Node.js. Required for cutover (DESIGN phase 4). | `README.md`, `.github/steps/4-convert-the-app.md` | Add a short "Run and test" section (Python 3.10, `python modernized/account_system.py`, venv + `pytest`, optional `cobc` for differential tests) | Developer |
+| F7 | Low | Operations | Still no CI job for ruff + pytest. | `.github/workflows/` | Add workflow; optionally `apt-get install gnucobol` to keep the oracle active | Developer |
+| F6 | Low | Supply chain | Dev deps pinned without hashes; `pip-audit` not run. | `requirements-dev.txt` | Run `pip-audit` (or `pip install --require-hashes`) in CI | Developer |
+| H4 | Info | Testing | Differential sessions use a fixed seed (60 sessions); untested long sequences (e.g. many overflows) rely on unit tests. | `test_session_differential.py` | Acceptable; raise `_SESSION_COUNT` or add a nightly larger seed range if CI time allows | Developer |
+
+Review 1 findings F1–F5, F8, F9 are verified fixed (see Remediation Status at the end).
+
+## Security Review
+
+- No authentication, authorization, secrets, network, files, or database; balance is synthetic and in memory (D5).
+- Input handling is total and bounded: parsers never raise (`never raises` tests incl. lone surrogates), lines are read in 64-character chunks and the remainder discarded (5,000-character test), no `eval`, `float`, shell, or dynamic code.
+- `fit_balance` rejects negative values (fails closed) instead of masking them.
+- Test harness uses `subprocess.run` with argument lists, timeouts, and `check=True`; legacy binary built only from repository sources into a pytest temp dir.
+- No OWASP CRITICAL or IMPORTANT patterns in changed code. H2 (stack traces on abnormal exit) is the only information-exposure item, local only.
+
+## Behavior Drift Review
+
+- Equivalent to legacy (after D2 normalization) for all recorded sessions (12), generated sessions (60), menu probes (15), recorded amount cases in `test_numeric*.py` plus 250 seeded strings, and 18,000 ad-hoc fuzz inputs.
+- Intentional changes verified by tests: D2/C1 unpadded amounts (`test_format_amount`, session tests); D8/C2 EOF at menu prints goodbye and exits 0 (`test_end_of_input_at_menu_says_goodbye`).
+- EOF while an amount is requested reads 0.00 like legacy (`test_end_of_input_at_amount_reads_zero_then_goodbye`).
+- Drift found: H1 only (non-UTF-8 stdin encoding).
+
+## Testing Review
+
+- Meaningful assertions: exact full transcripts (menu, prompts with trailing space, messages), exact `Decimal` values, store state after each operation, exit codes; differential tests compare against the real legacy process. No mocks of the unit under test; `main()` exercised both in-process and as a real subprocess.
+- Legacy behavior coverage: every RULE-001…018 has at least one direct test and appears in a differential session; RULE-014 also covered by fuzzing. Gaps: H1 (encoding) and H2 (abnormal termination) have no tests.
+
+## Error Handling and Observability
+
+- Error handling: invalid input follows legacy semantics (no errors by design); negative balance raises `ValueError` (unreachable); abnormal I/O termination not handled (H2).
+- Logs: none by design — stdout is the business contract (DESIGN).
+- Metrics: not applicable (local console).
+- Traces: not applicable.
+
+## Operational Readiness
+
+- Configuration: none at runtime; dev tooling in `modernized/` (`requirements-dev.txt`, `ruff.toml`, `pytest.ini`), `.venv/` git-ignored.
+- Deployment: `python modernized/account_system.py` on Python 3.10, standard library only.
+- Runbooks: missing (H3).
+- Rollback: legacy `src/cobol` unchanged and builds with `cobc -x`; no data migration (D5).
+
+## Blockers
+
+- None for functional equivalence under UTF-8/C locales.
+- Before cutover (phase 4): fix H1 and add run instructions (H3). H2, F6, F7 recommended but not blocking.
+
+## Remediation Status — Review 2 (modernize-transform, 2026-10-20)
+
+| Finding | Status | Evidence |
+| --- | --- | --- |
+| H1 | Fixed | `main()` reconfigures stdin to UTF-8 + `surrogateescape`; `PYTHONIOENCODING=latin-1` with `\xe91234567` → 235567.00 = legacy; in-process and subprocess tests |
+| H2 | Fixed | Ctrl+C → exit 130, broken pipe → exit 141 with empty stderr, closed stdin → goodbye + exit 0 (D8); 3 tests |
+| H3 | Fixed | "Python version of the account system" section in `README.md` (run, test, differential prerequisites, approved differences, rollback) |
+| F6, F7, H4 | Open | Not in transform scope |
+
+---
+
+# Review 1 — phases 0–1 (historical)
+
+## Scope (Review 1)
 
 - Target: `modernized/` — `account_system.py` (numeric semantics, DESIGN phases 0–1), `tests/`, `pytest.ini`, `ruff.toml`, `requirements-dev.txt`.
 - Reviewed artifacts: [BRIEF.md](BRIEF.md) (D1–D8), [ASSESSMENT.md](ASSESSMENT.md), [RULES.md](RULES.md), [MAP.md](MAP.md), [DESIGN.md](DESIGN.md); legacy `src/cobol/*.cob` as oracle (GnuCOBOL 3.1.2, binary compiled to `/tmp`).

@@ -5,6 +5,8 @@ Rule IDs refer to analysis/account-system/RULES.md; design in analysis/account-s
 
 from __future__ import annotations
 
+import io
+import os
 import sys
 from decimal import ROUND_DOWN, Decimal
 from typing import TextIO
@@ -12,6 +14,10 @@ from typing import TextIO
 CENT = Decimal("0.01")
 INITIAL_BALANCE = Decimal("1000.00")
 MAX_BALANCE = Decimal("999999.99")
+
+# Shell conventions: 128 + SIGINT, 128 + SIGPIPE.
+_EXIT_INTERRUPTED = 130
+_EXIT_BROKEN_PIPE = 141
 
 # PIC 9(6)V99 holds 8 digit positions; GnuCOBOL ACCEPT reads only that many input bytes.
 _AMOUNT_INPUT_WIDTH = 8
@@ -179,9 +185,21 @@ def run(inp: TextIO, out: TextIO) -> int:
 
 
 def main() -> int:
-    # Keep invalid UTF-8 bytes and lone '\r' intact: both are significant to RULE-014.
-    sys.stdin.reconfigure(errors="surrogateescape", newline="\n")
-    return run(sys.stdin, sys.stdout)
+    if sys.stdin is None:
+        # No stdin at all is the same as immediate end of input (D8).
+        return run(io.StringIO(""), sys.stdout)
+    # UTF-8 + surrogateescape round-trips every input byte whatever the locale (RULE-014 counts
+    # bytes); newline="\n" keeps a lone '\r', which RULE-014 treats as a blank.
+    sys.stdin.reconfigure(encoding="utf-8", errors="surrogateescape", newline="\n")
+    try:
+        return run(sys.stdin, sys.stdout)
+    except KeyboardInterrupt:
+        return _EXIT_INTERRUPTED
+    except BrokenPipeError:
+        # Python would report the pipe again when flushing stdout at exit.
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, sys.stdout.fileno())
+        return _EXIT_BROKEN_PIPE
 
 
 if __name__ == "__main__":

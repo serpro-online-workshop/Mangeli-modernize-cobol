@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import io
+import os
+import subprocess
+import sys
 
 import pytest
-from conftest import run_modern_process
+from conftest import MODULE_PATH, run_modern_process
 
+import account_system
 from account_system import GOODBYE, INVALID_CHOICE, MENU_LINES, main, run
 
 MENU = "".join(line + "\n" for line in MENU_LINES)
@@ -95,3 +99,60 @@ def test_main_preserves_invalid_utf8_and_carriage_return(monkeypatch) -> None:
     assert main() == 0
     assert "Amount credited. New balance: 235567.00\n" in stdout.getvalue()
     assert "Amount credited. New balance: 236801.00\n" in stdout.getvalue()
+
+
+def test_main_reads_bytes_as_utf8_whatever_the_locale(monkeypatch) -> None:
+    # HARDENING H1: legacy result for b"\xe91234567" is 235567.00 regardless of locale.
+    stdin = io.TextIOWrapper(io.BytesIO(b"2\n\xe91234567\n4\n"), encoding="latin-1")
+    stdout = io.StringIO()
+    monkeypatch.setattr("sys.stdin", stdin)
+    monkeypatch.setattr("sys.stdout", stdout)
+    assert main() == 0
+    assert "Amount credited. New balance: 235567.00\n" in stdout.getvalue()
+
+
+def test_main_process_ignores_non_utf8_locale_encoding() -> None:
+    env = {**os.environ, "PYTHONIOENCODING": "latin-1"}
+    result = subprocess.run(
+        [sys.executable, str(MODULE_PATH)],
+        input=b"2\n\xe91234567\n4\n",
+        capture_output=True,
+        env=env,
+        timeout=5,
+        check=True,
+    )
+    assert b"Amount credited. New balance: 235567.00\n" in result.stdout
+
+
+def test_main_without_stdin_says_goodbye(monkeypatch) -> None:
+    # HARDENING H2: closed stdin behaves like immediate end of input (D8).
+    stdout = io.StringIO()
+    monkeypatch.setattr("sys.stdin", None)
+    monkeypatch.setattr("sys.stdout", stdout)
+    assert main() == 0
+    assert stdout.getvalue() == MENU + BYE
+
+
+def test_main_interrupted_exits_130_without_traceback(monkeypatch) -> None:
+    # HARDENING H2
+    def interrupted(_inp, _out) -> int:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("sys.stdin", io.TextIOWrapper(io.BytesIO(b""), encoding="utf-8"))
+    monkeypatch.setattr(account_system, "run", interrupted)
+    assert main() == 130
+
+
+def test_main_broken_pipe_exits_quietly() -> None:
+    # HARDENING H2: the reader goes away before any output is consumed.
+    process = subprocess.Popen(
+        [sys.executable, str(MODULE_PATH)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert process.stdout is not None
+    process.stdout.close()
+    _, stderr = process.communicate(input=b"9\n" * 20000, timeout=10)
+    assert process.returncode == 141
+    assert stderr == b""
