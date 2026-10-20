@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+MODULE_PATH = REPO_ROOT / "modernized" / "account_system.py"
 LEGACY_SOURCES = [
     REPO_ROOT / "src" / "cobol" / name for name in ("main.cob", "operations.cob", "data.cob")
 ]
@@ -14,20 +16,28 @@ LEGACY_SOURCES = [
 LEGACY_TIMEOUT_SECONDS = 5
 
 
+def _run_process(command: list[str], script: str) -> str:
+    result = subprocess.run(
+        command,
+        input=script.encode("utf-8", "surrogateescape"),
+        capture_output=True,
+        timeout=LEGACY_TIMEOUT_SECONDS,
+        check=True,
+    )
+    return result.stdout.decode("utf-8", "surrogateescape")
+
+
 class LegacyApp:
     def __init__(self, binary: Path) -> None:
         self._binary = binary
 
     def run(self, script: str) -> str:
-        result = subprocess.run(
-            [str(self._binary)],
-            input=script,
-            capture_output=True,
-            text=True,
-            timeout=LEGACY_TIMEOUT_SECONDS,
-            check=True,
-        )
-        return result.stdout
+        return _run_process([str(self._binary)], script)
+
+
+def run_modern_process(script: str) -> str:
+    """Run the Python app as a real process so stdin decoding matches production."""
+    return _run_process([sys.executable, str(MODULE_PATH)], script)
 
 
 @pytest.fixture(scope="session")

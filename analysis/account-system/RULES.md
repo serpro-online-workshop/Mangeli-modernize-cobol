@@ -190,10 +190,10 @@ Runtime oracle: GnuCOBOL 3.1.2.0, `cobc -x src/cobol/{main,operations,data}.cob 
 - Type: validation
 - Evidence state: observed (runtime) — source only shows `ACCEPT AMOUNT` into unsigned `PIC 9(6)V99`
 - Plain language: The amount line is interpreted as follows (amended 2026-10-20 after differential fuzzing in `modernize-transform`):
-  1. Only the **first 8 characters** are considered (field length of `9(6)V99`); the rest is ignored.
+  1. Only the **first 8 bytes** are considered (field length of `9(6)V99`; a UTF-8 `é` takes 2); the rest of the line is read and ignored.
   2. Special case: if those 8 characters are any character other than `.` followed by **7 digits**, the first character is ignored and the 7 digits are the integer part (e.g. `a1234567` → 234567.00).
-  3. Otherwise: leading spaces are skipped; then one optional `+`/`-` is accepted and discarded (value is always positive). A sign anywhere else (including after a comma) makes the amount 0.
-  4. Spaces and `,` are ignored at any position after that (`1 2` → 12, `1,5` → 15).
+  3. Otherwise: leading blanks are skipped; then one optional `+`/`-` is accepted and discarded (value is always positive). A sign anywhere else (including after a comma) makes the amount 0.
+  4. Blanks (space, tab, VT, FF, CR) and `,` are ignored at any position after that (`1 2` → 12, `1,5` → 15, `12\r34` → 1234). Other control characters (including NUL) are invalid.
   5. `.` is the decimal point; once 2 fractional digits are read, all remaining characters are ignored, even invalid ones (`.3148a5.` → 0.31). Fewer than 2 fractional digits are zero-filled.
   6. Integer digits beyond 6 keep the low-order 6.
   7. Before the 2nd fractional digit, any other character (letter, `e`, misplaced sign, second `.`) makes the whole amount **0**; an input with no digits is 0.
@@ -223,7 +223,7 @@ Runtime oracle: GnuCOBOL 3.1.2.0, `cobc -x src/cobol/{main,operations,data}.cob 
   - Given balance 1000.00, When crediting `999999.99`, Then new balance is 999.90 (999999.90 + 1000.00 overflow per RULE-010).
   - Given balance 1000.00, When debiting `-50`, Then `Amount debited. New balance: 000950.00`.
   - Given balance 1000.00, When crediting `abc`, Then balance stays 1000.00 and the credited message is shown.
-- Confidence: high (amended rule matches the legacy binary on 12,000 random inputs over `0-9+-., a*`, length 0–12, seeds 7/11/23/99 — 0 mismatches; pinned in `modernized/tests/test_numeric*.py`)
+- Confidence: high (amended rule matches the legacy binary on 12,000 random inputs over `0-9+-., ab*` plus tab, CR, VT and `é`, length 0–12, seeds 7/11/23/99 — 0 mismatches; control characters 1–31 and 127 probed individually; pinned in `modernized/tests/test_numeric*.py`)
 - Requirement candidate: yes (D3 preserve)
 
 ### RULE-015 — Amount is always requested, even before the balance check

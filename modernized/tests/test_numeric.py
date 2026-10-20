@@ -95,6 +95,24 @@ def test_parse_choice(line: str, expected: int | None) -> None:
         ("a123456", "0.00"),
         ("9a234567", "0.00"),
         (".1234567", "0.12"),
+        # HARDENING F2: tab, VT, FF and CR behave like spaces.
+        ("\t5", "5.00"),
+        ("\t+5", "5.00"),
+        ("+\t5", "5.00"),
+        ("1\t2", "12.00"),
+        ("1.\t5", "1.50"),
+        ("\x0b5", "5.00"),
+        ("\x0c5", "5.00"),
+        ("12\r34", "1234.00"),
+        ("5\r", "5.00"),
+        ("1234567\r", "234567.00"),
+        ("5\x00", "0.00"),
+        ("1\x012", "0.00"),
+        # HARDENING F3: the 8-position window counts UTF-8 bytes.
+        ("\u00e91234567", "0.00"),
+        ("\u00e95", "0.00"),
+        ("1.23\u00e9", "1.23"),
+        ("\uff15", "0.00"),
     ],
 )
 def test_parse_amount(line: str, expected: str) -> None:
@@ -103,6 +121,14 @@ def test_parse_amount(line: str, expected: str) -> None:
 
 def test_parse_amount_rejects_non_ascii_digits() -> None:
     assert parse_amount("\u00b2") == Decimal("0.00")
+
+
+def test_parse_amount_restores_undecodable_bytes() -> None:
+    assert parse_amount("\udcff1234567") == Decimal("234567.00")
+
+
+def test_parse_amount_never_raises_on_lone_surrogate() -> None:
+    assert parse_amount("\ud8005") == Decimal("0.00")
 
 
 # RULE-010 overflow probes: balance 1000.00 + amount.
@@ -119,6 +145,11 @@ def test_parse_amount_rejects_non_ascii_digits() -> None:
 )
 def test_fit_balance(value: str, expected: str) -> None:
     assert fit_balance(Decimal(value)) == Decimal(expected)
+
+
+def test_fit_balance_rejects_negative() -> None:
+    with pytest.raises(ValueError, match="negative"):
+        fit_balance(Decimal("-0.01"))
 
 
 # RULE-017 with intentional change D2.

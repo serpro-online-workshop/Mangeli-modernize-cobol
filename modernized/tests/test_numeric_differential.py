@@ -15,7 +15,7 @@ pytestmark = pytest.mark.differential
 _CREDIT_RESULT = re.compile(r"Amount credited\. New balance: (\d{6}\.\d{2})")
 _CORPUS_SEED = 20261020
 _CORPUS_SIZE = 250
-_CORPUS_ALPHABET = "0123456789+-., a"
+_CORPUS_ALPHABET = "0123456789+-., ab*\t\r\x0b\u00e9"
 
 RULE_005_CASES = ["1", "2", "3", "4", "12", "1x", "3a", "0", "5", "9", "x", " 1", "-1", "+1", ""]
 RULE_014_CASES = [
@@ -57,7 +57,6 @@ RULE_014_CASES = [
     "999999999",
     "+999999.99",
     "-.01",
-    "1 2",
     "6 .55",
     "2. 2 ",
     ".3148a5.-2",
@@ -85,6 +84,14 @@ RULE_014_CASES = [
     "a12345 6",
     "9a234567",
     "a1234567.5",
+    "\t+5",
+    "1\t2",
+    "\x0c5",
+    "12\r34",
+    "5\x00",
+    "\u00e91234567",
+    "1.23\u00e9",
+    "\u00e9\u00e9\u00e912345",
 ]
 
 

@@ -34,7 +34,7 @@ All in `modernized/account_system.py`.
 ### Console I/O contract (measured with `cat -A` on legacy output)
 
 - Every `DISPLAY` is one line ending in `\n`, including prompts with their trailing space: `Enter your choice (1-4): \n`, `Enter credit amount: \n`, `Enter debit amount: \n`. Use `out.write(text + "\n")`, not `input(prompt)` (which omits the newline and writes to the terminal differently).
-- Input is not echoed. Read one line with `inp.readline()`; strip only the trailing `\n` / `\r\n` before parsing (parsers handle spaces per RULE-005/014).
+- Input is not echoed. Read one line in bounded 64-character chunks (rest of a long line is discarded, like legacy); strip only the trailing `\n`. stdin is reconfigured with `newline="\n"` and `errors="surrogateescape"` so `\r` and invalid UTF-8 bytes reach the parsers unchanged (RULE-014 counts bytes and treats `\r` as blank).
 - Menu block (8 lines) is printed before every choice, exactly as RULE-003.
 - Final line on option 4: `Exiting the program. Goodbye!`.
 
